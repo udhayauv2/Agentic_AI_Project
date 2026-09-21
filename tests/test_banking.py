@@ -1,12 +1,15 @@
 import uuid
 import pytest
-from app.db import init_dbs, get_agent_conn
+import app.db as db
+from app.db import get_agent_conn
 from app.auth import AuthContext
 import app.tools as tools
 
 @pytest.fixture(autouse=True)
-def setup_db():
-    init_dbs()
+def setup_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "BANKING_DB_PATH", str(tmp_path / "banking.db"))
+    monkeypatch.setattr(db, "AGENT_DB_PATH", str(tmp_path / "agent.db"))
+    db.init_dbs()
 
 def test_customer_cannot_view_others_balance():
     auth = AuthContext(user_id="CUST_1", role="customer", branch_id="BR_CHENNAI", scopes={"read:balance"})
@@ -20,7 +23,7 @@ def test_customer_cannot_freeze_account():
 
 def test_database_paths_work_from_any_current_directory(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    init_dbs()
+    db.init_dbs()
     auth = AuthContext(user_id="CUST_1", role="customer", branch_id="BR_CHENNAI", scopes={"read:balance"})
     assert tools.get_account_balance(auth, "ACC_100").get("account_id") == "ACC_100"
 

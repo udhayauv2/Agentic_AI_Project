@@ -1,13 +1,16 @@
 import uuid
 import pytest
-from app.db import init_dbs, get_banking_conn
+import app.db as db
+from app.db import get_banking_conn
 from app.auth import AuthContext
 import app.tools as tools
 from app.agent import generate_idempotency_key
 
 @pytest.fixture(autouse=True)
-def fresh_db():
-    init_dbs()
+def fresh_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "BANKING_DB_PATH", str(tmp_path / "banking.db"))
+    monkeypatch.setattr(db, "AGENT_DB_PATH", str(tmp_path / "agent.db"))
+    db.init_dbs()
 
 def test_crash_recovery_prevents_double_transfer():
     auth = AuthContext(
