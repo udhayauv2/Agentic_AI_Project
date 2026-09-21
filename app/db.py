@@ -1,16 +1,20 @@
 import sqlite3
-import os
 from contextlib import contextmanager
+from pathlib import Path
 
-BANKING_DB_PATH = "banking.db"
-AGENT_DB_PATH = "agent.db"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BANKING_DB_PATH = str(PROJECT_ROOT / "banking.db")
+AGENT_DB_PATH = str(PROJECT_ROOT / "agent.db")
 
 def init_dbs():
-    for db_path, schema_file in [(BANKING_DB_PATH, "schema/banking.sql"), (AGENT_DB_PATH, "schema/agent.sql")]:
+    schemas = [
+        (BANKING_DB_PATH, PROJECT_ROOT / "schema" / "banking.sql"),
+        (AGENT_DB_PATH, PROJECT_ROOT / "schema" / "agent.sql"),
+    ]
+    for db_path, schema_file in schemas:
         with sqlite3.connect(db_path) as conn:
-            if os.path.exists(schema_file):
-                with open(schema_file, "r", encoding="utf-8") as f:
-                    conn.executescript(f.read())
+            with schema_file.open("r", encoding="utf-8") as schema:
+                conn.executescript(schema.read())
 
 @contextmanager
 def get_banking_conn():

@@ -1,7 +1,12 @@
 import json
+import math
 import uuid
 from app.auth import AuthContext
 from app.db import get_banking_conn
+
+
+def _valid_amount(amount: float) -> bool:
+    return isinstance(amount, (int, float)) and not isinstance(amount, bool) and math.isfinite(amount) and amount > 0
 
 def get_account_balance(auth: AuthContext, account_id: str) -> dict:
     """Look up balance and status of an account. Read-only."""
@@ -20,13 +25,19 @@ def get_account_balance(auth: AuthContext, account_id: str) -> dict:
 
 def check_transfer_eligibility(auth: AuthContext, sender_acc: str, amount: float) -> dict:
     """Check if a transfer is valid before executing. Read-only."""
-    if amount <= 0:
+    if not auth.has_scope("write:transfer"):
+        return {"eligible": False, "reason": "Missing write:transfer permission."}
+    if not _valid_amount(amount):
         return {"eligible": False, "reason": "Amount must be greater than 0."}
 
     with get_banking_conn() as conn:
         row = conn.execute("SELECT balance, is_frozen FROM account WHERE id = ?", (sender_acc,)).fetchone()
         if not row:
             return {"eligible": False, "reason": "Sender account does not exist."}
+        if auth.role == "customer":
+            owner = conn.execute("SELECT customer_id FROM account WHERE id = ?", (sender_acc,)).fetchone()
+            if owner["customer_id"] != auth.user_id:
+                return {"eligible": False, "reason": "Cannot debit accounts belonging to others."}
         if row["is_frozen"]:
             return {"eligible": False, "reason": "Sender account is frozen."}
         if row["balance"] < amount:
@@ -38,6 +49,8 @@ def transfer_funds(auth: AuthContext, sender_acc: str, receiver_acc: str, amount
     """Executes money transfer. Side-effect tool guarded by idempotency and optimistic locking."""
     if not auth.has_scope("write:transfer"):
         return {"error": "forbidden", "hint": "Missing write:transfer permission."}
+    if not _valid_amount(amount):
+        return {"error": "invalid_amount", "hint": "Amount must be greater than 0."}
 
     with get_banking_conn() as conn:
         # Check idempotency replay
@@ -52,6 +65,8 @@ def transfer_funds(auth: AuthContext, sender_acc: str, receiver_acc: str, amount
             return {"error": "account_not_found", "hint": "Verify sender and receiver accounts."}
         if auth.role == "customer" and sender["customer_id"] != auth.user_id:
             return {"error": "unauthorized", "hint": "Can only debit your own account."}
+        if sender["is_frozen"]:
+            return {"error": "account_frozen", "hint": "Sender account is frozen."}
         if sender["balance"] < amount:
             return {"error": "insufficient_funds", "hint": "Balance is insufficient."}
 
